@@ -1,0 +1,217 @@
+---
+title: "sds-hw9"
+output: html_document
+date: "2025-04-19"
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, # show the code
+                      eval = TRUE, # run the code
+                      warning = TRUE, # show warning messages
+                      message = FALSE, # show basic messages
+                      fig.align = "center"
+                      )
+```
+
+```{r}
+# Problem 1)
+
+# 1. Load libraries and data
+library(ggplot2)
+library(broom)
+library(dplyr)
+library(readr)
+library(tidyverse)
+
+solder <- read.csv("solder.csv")
+groceries <- read_csv('groceries.csv')
+
+# 2. Convert to factors (don’t hardcode levels)
+solder$Opening <- factor(solder$Opening)
+solder$Solder  <- factor(solder$Solder)
+
+# 3. Diagnostic: make sure each factor has ≥2 levels
+print(table(solder$Opening))  # should show at least two non‑zero counts
+print(table(solder$Solder))
+
+# 4. Part A: Exploratory plots
+
+# 4a. Skips vs. Opening
+ggplot(solder, aes(Opening, skips)) +
+  geom_boxplot(fill = "lightblue") +
+  geom_jitter(width = 0.1, alpha = 0.5) +
+  labs(
+    title = "Number of Solder Skips vs. Gun Opening Size",
+    x     = "Opening Size",
+    y     = "Number of Skips"
+  ) +
+  theme_minimal()
+# Caption: Boards with medium-sized openings show fewer skips on average than small or large.
+
+ggplot(solder, aes(Solder, skips)) +
+  geom_boxplot(fill = "salmon") +
+  geom_jitter(width = 0.1, alpha = 0.5) +
+  labs(
+    title = "Number of Solder Skips vs. Alloy Thickness",
+    x     = "Alloy Thickness",
+    y     = "Number of Skips"
+  ) +
+  theme_minimal()
+# Caption: Thin alloy tends to produce fewer skips compared to thick alloy.
+```
+
+```{r}
+
+# Part B: Fit regression with interaction
+mod1 <- lm(skips ~ Opening * Solder, data = solder)
+
+
+# Part B: Table of estimates & 95% CIs
+tbl1 <- tidy(mod1, conf.int = TRUE)
+print(tbl1[, c("term", "estimate", "conf.low", "conf.high")])
+
+```
+
+# Part C: Interpret coefficients 
+# With 95% confidence, The true baseline number of solder skips on AT&T's
+#circuit boards when the soldering gun opening is large and the soldering
+#alloy is thick is between -0.63 and 1.41.
+
+#With 95% confidence, The true main effect of the soldering gun's opening
+#being medium-sized lies between 0.96 and 3.85 additional solder skips.
+
+#With 95% confidence, The true main effect of the soldering gun's opening
+#being small-sized lies between 3.68 and 6.57 additional solder skips.
+
+#With 95% confidence, The true main effect of the soldering alloy being
+#thing lies between 0.84 and 3.72 additional solder skips.
+
+#With 95% confidence, The true interaction effect of the soldering gun
+#opening being medium-sized and the soldering alloy being thin lies
+#between -2.78 and 1.30 additional solder skips.
+
+#With 95% confidence, The true interaction effect of the soldering gun
+#opening being small-sized and the soldering alloy being thin lies
+#between 7.61 and 11.70 additional solder skips.
+
+
+```{r}
+# Part D: Predicted means for each factor combination
+newdata <- expand.grid(
+  Opening = levels(solder$Opening),
+  Solder  = levels(solder$Solder)
+)
+newdata$pred_skips <- predict(mod1, newdata)
+print(newdata)
+```
+
+```{r}
+#  Problem 2)
+groc <- read_csv("groceries.csv")
+
+groceries %>% 
+  group_by(Store) %>% 
+  summarize(mean_price = mean(Price)) %>%
+  # Ordering stores by price
+  mutate(Store = fct_reorder(Store, mean_price)) %>% 
+  ggplot(aes(x = Store, y = mean_price)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  coord_flip() +
+  labs(x = "Store",
+       y = "Products' Mean Price",
+       title = "Mean Product Price by Texas Grocery Stores")
+
+```
+
+```{r}
+# Part B: number of stores per product
+count_by_product <- groc %>%
+  distinct(Store, Product) %>%
+  count(Product, name = "n_stores") %>%
+  arrange(n_stores)
+
+ggplot(count_by_product, aes(x = n_stores, y = fct_reorder(Product, n_stores))) +
+  geom_col(fill = "coral") +
+  labs(
+    title = "Number of Stores Selling Each Product",
+    x     = "Number of Stores",
+    y     = "Product"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# Part C: Price ~ Product + Type
+tbl_type <- tidy(mod_type, conf.int = TRUE)
+
+# List out all the store‐type terms:
+tbl_type %>%
+  filter(str_detect(term, "^Type")) %>%
+  select(term, estimate, conf.low, conf.high)
+```
+
+```{r}
+# Part D: Price ~ Product + Store
+mod_store <- lm(Price ~ Product + Store, data = groc)
+tbl_store <- tidy(mod_store, conf.int = TRUE)
+# two lowest & two highest store effects:
+tbl_store %>%
+  filter(str_detect(term, "^Store")) %>%
+  arrange(estimate) %>%
+  slice(1:2)  # lowest
+tbl_store %>%
+  filter(str_detect(term, "^Store")) %>%
+  arrange(desc(estimate)) %>%
+  slice(1:2)  # highest
+```
+
+```{r}
+### **Part E: Price Discrimination**
+
+groceries$Store <- relevel(factor(groceries$Store), ref = "H-E-B")
+
+# refit the model
+store_lm1 <- lm(Price ~ Product + Store, data = groceries)
+tidy_store <- tidy(store_lm1)
+
+coef(store_lm)["StoreCentral Market"]
+
+store_terms <- tidy_store[grep("^Store", tidy_store$term), ]
+
+#cheapest store vs HEB
+store_terms <- store_terms[order(store_terms$estimate), ]
+
+cheapest_store <- store_terms[1, ]
+
+print(cheapest_store)
+
+#priciest store vs HEB
+store_terms <- store_terms[order(store_terms$estimate), ]
+
+priciest_store <- tail(store_terms,1)
+
+print(priciest_store)
+```
+
+```{r}
+# Part F: Price ~ Product + Income10K
+groc2 <- groc %>% mutate(Income10K = Income / 10000)
+mod_inc <- lm(Price ~ Product + Income10K, data = groc2)
+tbl_inc <- tidy(mod_inc)
+est_inc  <- tbl_inc %>% filter(term == "Income10K") %>% pull(estimate)
+sd_inc   <- sd(groc2$Income10K, na.rm = TRUE)
+sd_price <- sd(groc2$Price,     na.rm = TRUE)
+std_beta <- est_inc * (sd_inc / sd_price)
+cat("Income10K coef:", round(est_inc,3), 
+    "\n1‑SD income →", round(std_beta,3), "SD price\n")
+```
+#Problem 3) 
+1.True. Figure A1 shows a clear upward trend, and the simple regression of policies ~ minority gives a slope of 0.014 (95% CI [0.009, 0.018]), with R² ≈ 0.52, indicating a moderate positive association
+
+2. Undecidable. No model includes a minority x age interaction. The only regression relating those two is minority ~ age (R²=0.061), which treats them as separate predictors without testing their interplay.
+
+3. False. In the interaction model (policies ~ minority * fire_risk), the slope in high‑risk areas is 0.010, and the low‑risk slope is 0.010 + (–0.001) = 0.009. The interaction term (–0.001) is essentially zero and not significant (95% CI [–0.012, 0.010], p = 0.839), so there’s no evidence of a stronger effect in high‑risk ZIP codes ​
+
+4. False. The unadjusted model (policies ~ minority) gives a coefficient of 0.014 (95% CI[0.009, 0.018]). Adding income reduces it only to 0.010 (95% CI [0.004, 0.015]), but it remains positive and significant. Income does not fully “explain away” the minority effect
+
+5. True. In the full model (undefined), the minority coefficient remains positive at 0.008 (95 % CI [0.003, 0.014], p = 0.006), showing the association persists after adjusting for all controls 
